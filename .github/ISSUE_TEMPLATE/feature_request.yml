@@ -1,0 +1,11 @@
+name: Feature request
+description: Suggest a workflow or product improvement
+body:
+  - type: textarea
+    id: problem
+    attributes: { label: Problem, description: What user need should this address? }
+    validations: { required: true }
+  - type: textarea
+    id: proposal
+    attributes: { label: Proposed behavior }
+    validations: { required: true }

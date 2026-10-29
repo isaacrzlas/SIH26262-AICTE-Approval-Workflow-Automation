@@ -1,59 +1,45 @@
 # AICTE Approval Workflow Automation
 
-Starter workspace for SIH26262. It includes a responsive dashboard and an Isaac-owned workflow API with PostgreSQL persistence and a RabbitMQ event outbox when those services are configured.
+Local prototype for the SIH26262 AICTE approval and compliance brief. The workspace includes a React dashboard, Express REST API, in-memory demo workflow, optional PostgreSQL/RabbitMQ integration, and delivery scaffolding.
 
-## Run locally
+## Run the preview
 
-Requires Node.js 20 or newer and pnpm 11.25.0. To run with durable storage and messaging, start the local services first:
+Requires Node.js 20 or newer and pnpm 11.25.0.
 
-```bash
-docker compose up -d
-Copy-Item .env.example .env
+```powershell
 pnpm install
 pnpm dev
 ```
 
-On PowerShell, `Copy-Item .env.example .env` creates the local connection settings. Open <http://127.0.0.1:4173>. The server applies the SQL migration at startup and hosts the JSON API under `/api`.
+Open the Vite URL printed in the terminal (normally <http://127.0.0.1:5173>). The frontend proxies API calls to Express on port 4173. Without `.env`, the server loads five demo applications and uses temporary in-memory storage; records reset when the server restarts. The role selector and compliance examples are simulations.
 
-Compose exposes its PostgreSQL container on host port 5433 so it can coexist with a local PostgreSQL service already using 5432.
+To run the durable local service stack, create `.env` from `.env.example`, then run `docker compose up --build`. The stack uses development-only credentials, local PostgreSQL/RabbitMQ, and demo seed records. Open <http://127.0.0.1:4173> after the app health check passes.
 
-To preview only the UI/API without Docker, omit `.env`; the server then falls back to in-memory storage and local events. Those records are lost when the process restarts.
-
-## Workflow API
+## Current API
 
 - `GET /api/health`
 - `GET /api/applications?status=Pending%20EVC&region=South&search=college`
-- `POST /api/applications` — returns `201 Created`
+- `POST /api/applications`
 - `GET /api/applications/{id}`
 - `PUT /api/applications/{id}/stage`
 - `GET /api/applications/{id}/audit`
+- `GET /api/evc/queue`, `POST /api/evc/schedule`
+- `GET /api/undertakings`, `POST /api/undertakings`, `PUT /api/undertakings/{id}`
+- `GET /api/notifications`
 
-Create an application:
+Full starter API description is in [`docs/openapi.yaml`](docs/openapi.yaml). APH routing assumptions are in [`docs/APH-routing.md`](docs/APH-routing.md).
 
-```json
-{
-  "institutionName": "Northstar College of Engineering",
-  "region": "North",
-  "instituteType": "new"
-}
-```
+Existing institutes follow Scrutiny → Approved; new institutes follow Scrutiny → Pending EVC → SAC / SHC → Approved, as interpreted from the brief pending team confirmation. Stage actions are `approve`, `reject`, `revert`, and `clarification`; revert, reject, and clarification require comments.
 
-`instituteType` is `existing` or `new`. Existing institutes follow Scrutiny → Approved; new institutes follow Scrutiny → Pending EVC → SAC / SHC → Approved. Stage actions are `approve`, `reject`, `revert`, and `clarification`. Revert, reject, and clarification actions require a non-empty `comments` field. `x-actor` supplies a demo actor label until real authentication is integrated.
+The PostgreSQL workflow repository transactionally stores applications, stage history, audit entries, and outbox events. RabbitMQ publishes workflow events at least once. EVC scheduling and undertaking/evidence data are currently in-memory prototype services; they are not yet persisted to PostgreSQL. No identity provider, production RBAC, private document storage, TLS termination, email/SMS delivery, or production cloud deployment is configured. Demo role selection is not a security boundary. Request throttling is process-local and must be replaced for multi-instance production use.
 
-The PostgreSQL repository stores applications, stage history, and append-only audit records. Stage transitions, audit entries, and event-outbox entries commit in one database transaction. The outbox dispatcher publishes durable messages to the `aicte.workflow.events` RabbitMQ queue and marks them delivered after broker confirmation. Delivery is at least once; downstream consumers should deduplicate by event ID. The in-process event publisher remains available to unit tests.
+## Development checks
 
-Local compose credentials (`aicte_local`) are for development only. Replace them before any shared or deployed environment, and do not commit `.env`.
-
-## Checks
-
-```bash
+```powershell
 pnpm lint
 pnpm test
 pnpm test:coverage
+pnpm build
 ```
 
-`CHECKLIST.md` tracks the full executive summary. Checked items describe what this prototype demonstrates; unchecked items are follow-on work, including team confirmation of the APH route rules.
-
-## Existing dashboard prototype
-
-`index.html`, `styles.css`, and `app.js` contain the responsive dashboard foundation with local sample records, filtering, CSV export, and a new-application form. Replacing its mock data with the API is part of the frontend workstream.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for collaboration rules. [`CHECKLIST.md`](CHECKLIST.md) records the full executive-summary scope and current completion status. [`reports.md`](reports.md) defines measured coverage percentages and distinguishes project targets from verified results. GitHub Actions runs lint, backend tests, and frontend build on pull requests and main/develop pushes.

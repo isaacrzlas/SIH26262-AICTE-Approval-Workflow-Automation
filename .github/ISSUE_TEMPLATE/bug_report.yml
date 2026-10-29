@@ -1,0 +1,15 @@
+name: Bug report
+description: Report a reproducible issue
+body:
+  - type: textarea
+    id: expected
+    attributes: { label: Expected behavior, description: What should happen? }
+    validations: { required: true }
+  - type: textarea
+    id: actual
+    attributes: { label: Actual behavior, description: What happened instead? }
+    validations: { required: true }
+  - type: textarea
+    id: reproduce
+    attributes: { label: Steps to reproduce }
+    validations: { required: true }

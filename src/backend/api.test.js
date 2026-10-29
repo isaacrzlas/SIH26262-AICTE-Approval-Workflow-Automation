@@ -57,3 +57,37 @@ test('API validates bad requests, reports missing records, and filters the appli
     assert.equal((await health.json()).status, 'ok');
   });
 });
+
+test('demo EVC scheduling and compliance evidence endpoints validate and update their records', async () => {
+  await withServer(async (baseUrl) => {
+    const created = await fetch(`${baseUrl}/api/applications`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ institutionName: 'EVC Test College', region: 'South', instituteType: 'new' }),
+    });
+    const { application } = await created.json();
+    await fetch(`${baseUrl}/api/applications/${application.id}/stage`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'approve' }),
+    });
+    const queue = await fetch(`${baseUrl}/api/evc/queue`);
+    assert.ok((await queue.json()).items.some((item) => item.id === application.id));
+    const scheduleResponse = await fetch(`${baseUrl}/api/evc/schedule`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ applicationId: application.id, scheduledAt: '2030-05-01T10:00:00Z', committee: 'South EVC' }),
+    });
+    assert.equal(scheduleResponse.status, 201);
+    const duplicate = await fetch(`${baseUrl}/api/evc/schedule`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ applicationId: application.id, scheduledAt: '2030-05-01T10:00:00Z', committee: 'South EVC' }),
+    });
+    assert.equal(duplicate.status, 409);
+
+    const undertakings = await (await fetch(`${baseUrl}/api/undertakings`)).json();
+    const item = undertakings.items[0];
+    const evidence = await fetch(`${baseUrl}/api/undertakings/${item.id}`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ evidence: 'Certificate reviewed' }),
+    });
+    assert.equal((await evidence.json()).undertaking.status, 'Fulfilled');
+    const alerts = await (await fetch(`${baseUrl}/api/notifications`)).json();
+    assert.ok(!alerts.items.some((alert) => alert.undertakingId === item.id));
+  });
+});
