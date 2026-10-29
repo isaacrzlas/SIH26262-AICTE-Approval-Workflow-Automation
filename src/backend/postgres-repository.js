@@ -3,9 +3,15 @@ const path = require('node:path');
 const { NotFoundError, ConflictError } = require('./workflow-errors');
 
 async function runMigrations(pool) {
-  const migrationPath = path.join(__dirname, 'migrations', '001_workflow.sql');
-  const sql = await fs.readFile(migrationPath, 'utf8');
-  await pool.query(sql);
+  const migrationDirectory = path.join(__dirname, 'migrations');
+  const migrationFiles = (await fs.readdir(migrationDirectory))
+    .filter((file) => /^\d+_.*\.sql$/.test(file))
+    .sort();
+  for (const migrationFile of migrationFiles) {
+    const migrationPath = path.join(migrationDirectory, migrationFile);
+    const sql = await fs.readFile(migrationPath, 'utf8');
+    await pool.query(sql);
+  }
 }
 
 function iso(value) {
@@ -49,6 +55,56 @@ function mapApplication(row, stageHistory = [], auditLog = []) {
     version: row.version,
     stageHistory,
     auditLog,
+  };
+}
+
+function mapUndertaking(row) {
+  return {
+    id: row.id,
+    applicationId: row.application_id,
+    institutionName: row.institution_name,
+    region: row.region,
+    description: row.description,
+    requiredAction: row.required_action,
+    dueDate: typeof row.due_date === 'string' ? row.due_date.slice(0, 10) : row.due_date.toISOString().slice(0, 10),
+    status: row.status,
+    createdBy: row.created_by,
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at),
+    fulfilledAt: iso(row.fulfilled_at),
+    evidence: row.evidence || null,
+  };
+}
+
+function mapComplianceDoc(row) {
+  return {
+    id: row.id,
+    applicationId: row.application_id,
+    undertakingId: row.undertaking_id,
+    documentType: row.document_type,
+    expiryDate: row.expiry_date ? (typeof row.expiry_date === 'string' ? row.expiry_date.slice(0, 10) : row.expiry_date.toISOString().slice(0, 10)) : null,
+    storageKey: row.storage_key,
+    mimeType: row.mime_type || null,
+    sizeBytes: row.size_bytes || null,
+    validationStatus: row.validation_status,
+    submittedBy: row.submitted_by,
+    submittedAt: iso(row.submitted_at),
+    validatedBy: row.validated_by,
+    validatedAt: iso(row.validated_at),
+  };
+}
+
+function mapComplianceAlert(row) {
+  return {
+    id: row.id,
+    applicationId: row.application_id,
+    undertakingId: row.undertaking_id,
+    complianceDocId: row.compliance_doc_id,
+    type: row.alert_type,
+    thresholdDays: row.threshold_days,
+    dedupeKey: row.dedupe_key,
+    message: row.message,
+    createdAt: iso(row.created_at),
   };
 }
 
@@ -175,6 +231,115 @@ function createPostgresRepository(pool) {
 
     async markEventDelivered(eventId, deliveredAt = new Date().toISOString()) {
       await pool.query('UPDATE event_outbox SET delivered_at=$2 WHERE id=$1 AND delivered_at IS NULL', [eventId, deliveredAt]);
+    },
+
+    async listUndertakings(applicationId = null) {
+      const result = await pool.query(
+        `SELECT u.*, a.institution_name, a.region
+         FROM undertakings u JOIN applications a ON a.id = u.application_id
+         WHERE ($1::uuid IS NULL OR u.application_id = $1)
+         ORDER BY u.due_date, u.created_at`,
+        [applicationId],
+      );
+      return result.rows.map(mapUndertaking);
+    },
+
+    async getUndertaking(undertakingId) {
+      const result = await pool.query(
+        `SELECT u.*, a.institution_name, a.region
+         FROM undertakings u JOIN applications a ON a.id = u.application_id
+         WHERE u.id = $1`,
+        [undertakingId],
+      );
+      return result.rows[0] ? mapUndertaking(result.rows[0]) : null;
+    },
+
+    async createUndertaking(undertaking, auditEntry) {
+      return withTransaction(async (client) => {
+        await client.query(
+          `INSERT INTO undertakings
+           (id, application_id, description, required_action, due_date, status, created_by, created_at, updated_at, fulfilled_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [undertaking.id, undertaking.applicationId, undertaking.description, undertaking.requiredAction, undertaking.dueDate,
+            undertaking.status, undertaking.createdBy, undertaking.createdAt, undertaking.updatedAt, undertaking.fulfilledAt],
+        );
+        await insertAudit(client, auditEntry);
+      });
+    },
+
+    async saveUndertaking(undertaking, auditEntry) {
+      return withTransaction(async (client) => {
+        const result = await client.query(
+          `UPDATE undertakings SET status=$2, updated_at=$3, fulfilled_at=$4, evidence=$5
+           WHERE id=$1`,
+          [undertaking.id, undertaking.status, undertaking.updatedAt, undertaking.fulfilledAt, undertaking.evidence || null],
+        );
+        if (!result.rowCount) throw new NotFoundError(`Undertaking ${undertaking.id} was not found`);
+        await insertAudit(client, auditEntry);
+      });
+    },
+
+    async listComplianceDocs(applicationId = null) {
+      const result = await pool.query(
+        `SELECT * FROM compliance_docs WHERE ($1::uuid IS NULL OR application_id = $1) ORDER BY submitted_at DESC`,
+        [applicationId],
+      );
+      return result.rows.map(mapComplianceDoc);
+    },
+
+    async createComplianceDoc(document, auditEntry) {
+      return withTransaction(async (client) => {
+        await client.query(
+          `INSERT INTO compliance_docs
+           (id, application_id, undertaking_id, document_type, expiry_date, storage_key, mime_type, size_bytes,
+            validation_status, submitted_by, submitted_at, validated_by, validated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [document.id, document.applicationId, document.undertakingId, document.documentType, document.expiryDate,
+            document.storageKey, document.mimeType, document.sizeBytes, document.validationStatus, document.submittedBy,
+            document.submittedAt, document.validatedBy, document.validatedAt],
+        );
+        await insertAudit(client, auditEntry);
+      });
+    },
+
+    async completeUndertaking(undertaking, document, auditEntries) {
+      return withTransaction(async (client) => {
+        await client.query(
+          `INSERT INTO compliance_docs
+           (id, application_id, undertaking_id, document_type, expiry_date, storage_key, mime_type, size_bytes,
+            validation_status, submitted_by, submitted_at, validated_by, validated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [document.id, document.applicationId, document.undertakingId, document.documentType, document.expiryDate,
+            document.storageKey, document.mimeType, document.sizeBytes, document.validationStatus, document.submittedBy,
+            document.submittedAt, document.validatedBy, document.validatedAt],
+        );
+        const result = await client.query(
+          `UPDATE undertakings SET status=$2, updated_at=$3, fulfilled_at=$4, evidence=$5 WHERE id=$1`,
+          [undertaking.id, undertaking.status, undertaking.updatedAt, undertaking.fulfilledAt, undertaking.evidence],
+        );
+        if (!result.rowCount) throw new NotFoundError(`Undertaking ${undertaking.id} was not found`);
+        for (const entry of auditEntries) await insertAudit(client, entry);
+      });
+    },
+
+    async saveComplianceAlert(alert, event) {
+      return withTransaction(async (client) => {
+        const result = await client.query(
+          `INSERT INTO compliance_alerts
+           (id, application_id, undertaking_id, compliance_doc_id, alert_type, threshold_days, dedupe_key, message, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+           ON CONFLICT (dedupe_key) DO NOTHING`,
+          [alert.id, alert.applicationId, alert.undertakingId, alert.complianceDocId, alert.type, alert.thresholdDays,
+            alert.dedupeKey, alert.message, alert.createdAt],
+        );
+        if (result.rowCount) await writeOutbox(client, event);
+        return Boolean(result.rowCount);
+      });
+    },
+
+    async listComplianceAlerts() {
+      const result = await pool.query('SELECT * FROM compliance_alerts ORDER BY created_at DESC');
+      return result.rows.map(mapComplianceAlert);
     },
   };
 }

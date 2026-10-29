@@ -95,9 +95,37 @@ test('PostgreSQL adapter rejects stale concurrent writes', async () => {
 });
 
 test('database migration runner applies the checked-in schema', async () => {
-  let sql;
-  await runMigrations({ async query(statement) { sql = statement; } });
-  assert.match(sql, /CREATE TABLE IF NOT EXISTS applications/);
-  assert.match(sql, /CREATE TABLE IF NOT EXISTS audit_logs/);
-  assert.match(sql, /CREATE TABLE IF NOT EXISTS event_outbox/);
+  const statements = [];
+  await runMigrations({ async query(statement) { statements.push(statement); } });
+  assert.equal(statements.length, 2);
+  assert.match(statements[0], /CREATE TABLE IF NOT EXISTS applications/);
+  assert.match(statements[0], /CREATE TABLE IF NOT EXISTS audit_logs/);
+  assert.match(statements[0], /CREATE TABLE IF NOT EXISTS event_outbox/);
+  assert.match(statements[1], /CREATE TABLE IF NOT EXISTS undertakings/);
+  assert.match(statements[1], /CREATE TABLE IF NOT EXISTS compliance_docs/);
+  assert.match(statements[1], /CREATE TABLE IF NOT EXISTS compliance_alerts/);
+});
+
+test('PostgreSQL adapter persists compliance records, audit entries, and deduplicated alerts', async () => {
+  const pool = createFakePool();
+  const repository = createPostgresRepository(pool);
+  const undertaking = {
+    id: eventId, applicationId, description: 'Renew lease', requiredAction: 'Upload lease', dueDate: '2030-05-01',
+    status: 'Open', createdBy: 'Aaron', createdAt: appRow.submitted_at.toISOString(),
+    updatedAt: appRow.submitted_at.toISOString(), fulfilledAt: null,
+  };
+  const document = {
+    id: auditId, applicationId, undertakingId: eventId, documentType: 'Lease', expiryDate: '2031-05-01',
+    storageKey: null, mimeType: 'text/plain', sizeBytes: 12, validationStatus: 'Valid', submittedBy: 'Aaron',
+    submittedAt: appRow.last_updated_at.toISOString(), validatedBy: 'Aaron', validatedAt: appRow.last_updated_at.toISOString(),
+  };
+  const audit = { id: '70000000-0000-4000-8000-000000000004', applicationId, action: 'compliance.undertaking.created', performedBy: 'Aaron', performedAt: appRow.submitted_at.toISOString(), details: { undertakingId: eventId } };
+  await repository.createUndertaking(undertaking, audit);
+  await repository.completeUndertaking({ ...undertaking, status: 'Fulfilled', evidence: 'Reviewed' }, document, [audit]);
+  const alert = { id: '70000000-0000-4000-8000-000000000005', applicationId, undertakingId: eventId, complianceDocId: null, type: 'undertaking.reminder', thresholdDays: 3, dedupeKey: `undertaking:${eventId}:due-3-days`, message: 'Due in 3 days', createdAt: appRow.submitted_at.toISOString() };
+  await repository.saveComplianceAlert(alert, { id: '70000000-0000-4000-8000-000000000006', type: 'compliance.undertaking.reminder', occurredAt: alert.createdAt, payload: alert });
+  assert.ok(pool.calls.some((sql) => sql.includes('INSERT INTO undertakings')));
+  assert.ok(pool.calls.some((sql) => sql.includes('INSERT INTO compliance_docs')));
+  assert.ok(pool.calls.some((sql) => sql.includes('UPDATE undertakings')));
+  assert.ok(pool.calls.some((sql) => sql.includes('INSERT INTO compliance_alerts')));
 });

@@ -5,9 +5,11 @@ const {
   ConflictError,
   createWorkflowService,
 } = require('./workflow');
+const { createComplianceService } = require('./compliance');
 
-function createApi({ workflow, repository, publisher } = {}) {
+function createApi({ workflow, repository, publisher, clock, idFactory } = {}) {
   workflow ||= createWorkflowService({ repository, publisher });
+  const compliance = createComplianceService({ repository: workflow.repository, clock, idFactory });
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '100kb', strict: true }));
@@ -29,12 +31,6 @@ function createApi({ workflow, repository, publisher } = {}) {
   });
 
   const evcSchedules = [];
-  const undertakings = [
-    { id: 'UND-1042', applicationId: 'AICTE-2026-0147', institutionName: 'Northstar College of Engineering', region: 'North', description: 'Submit updated fire safety certificate', dueDate: '2026-11-02', status: 'Open', evidence: null },
-    { id: 'UND-1038', applicationId: 'AICTE-2026-0145', institutionName: 'Riverbend Polytechnic', region: 'East', description: 'Upload faculty appointment records', dueDate: '2026-10-31', status: 'Open', evidence: null },
-    { id: 'UND-1027', applicationId: 'AICTE-2026-0144', institutionName: 'Meridian Institute of Technology', region: 'Central', description: 'Renew building occupancy certificate', dueDate: '2026-10-28', status: 'Overdue', evidence: null },
-  ];
-
   app.get('/api/evc/queue', async (_request, response, next) => {
     try {
       const items = await workflow.listApplications({ status: 'Pending EVC' });
@@ -51,29 +47,46 @@ function createApi({ workflow, repository, publisher } = {}) {
     evcSchedules.push(schedule);
     response.status(201).json({ schedule });
   });
-  app.get('/api/undertakings', (_request, response) => response.json({ items: undertakings }));
-  app.post('/api/undertakings', (request, response) => {
-    const { applicationId, institutionName, region, description, dueDate } = request.body || {};
-    if (![applicationId, institutionName, region, description].every((value) => typeof value === 'string' && value.trim()) || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate || '') || Number.isNaN(Date.parse(`${dueDate}T00:00:00Z`))) {
-      return response.status(400).json({ error: 'Application, institution, region, description, and valid due date are required' });
-    }
-    const item = { id: `UND-${Date.now()}`, applicationId: applicationId.trim(), institutionName: institutionName.trim(), region: region.trim(), description: description.trim(), dueDate, status: 'Open', evidence: null };
-    undertakings.unshift(item);
-    response.status(201).json({ undertaking: item });
+  app.get('/api/applications/:id/undertakings', async (request, response, next) => {
+    try { response.json({ items: await compliance.listUndertakings(request.params.id) }); }
+    catch (error) { next(error); }
   });
-  app.put('/api/undertakings/:id', (request, response) => {
-    const item = undertakings.find((entry) => entry.id === request.params.id);
-    if (!item) return response.status(404).json({ error: 'Undertaking was not found' });
-    const evidence = request.body?.evidence;
-    if (typeof evidence !== 'string' || !evidence.trim() || evidence.trim().length > 500) return response.status(400).json({ error: 'Evidence description is required and must be 500 characters or fewer' });
-    item.evidence = evidence.trim();
-    item.status = 'Fulfilled';
-    item.fulfilledAt = new Date().toISOString();
-    response.json({ undertaking: item });
+  app.post('/api/applications/:id/undertakings', async (request, response, next) => {
+    try {
+      const actor = request.get('x-actor') || 'demo-reviewer';
+      const undertaking = await compliance.createUndertaking(request.params.id, request.body, actor);
+      response.status(201).json({ undertaking });
+    } catch (error) { next(error); }
   });
-  app.get('/api/notifications', (_request, response) => {
-    const items = undertakings.filter((item) => item.status !== 'Fulfilled').map((item) => ({ id: `alert-${item.id}`, type: item.status === 'Overdue' ? 'Overdue' : 'Due soon', message: `${item.description} · ${item.institutionName}`, dueDate: item.dueDate, undertakingId: item.id }));
-    response.json({ items });
+  app.get('/api/applications/:id/compliance-docs', async (request, response, next) => {
+    try {
+      const application = await workflow.getApplication(request.params.id);
+      const items = await workflow.repository.listComplianceDocs(request.params.id);
+      if (!application) return response.status(404).json({ error: 'Application was not found' });
+      response.json({ items });
+    } catch (error) { next(error); }
+  });
+  app.get('/api/undertakings', async (_request, response, next) => {
+    try { response.json({ items: await compliance.listAllUndertakings() }); }
+    catch (error) { next(error); }
+  });
+  app.post('/api/undertakings', async (request, response, next) => {
+    try {
+      const actor = request.get('x-actor') || 'demo-reviewer';
+      const undertaking = await compliance.createUndertaking(request.body?.applicationId, request.body, actor);
+      response.status(201).json({ undertaking });
+    } catch (error) { next(error); }
+  });
+  app.put('/api/undertakings/:id', async (request, response, next) => {
+    try {
+      const actor = request.get('x-actor') || 'demo-reviewer';
+      const result = await compliance.submitEvidence(request.params.id, request.body, actor);
+      response.json(result);
+    } catch (error) { next(error); }
+  });
+  app.get('/api/notifications', async (_request, response, next) => {
+    try { response.json({ items: await compliance.listAlerts() }); }
+    catch (error) { next(error); }
   });
 
   app.get('/api/health', (_request, response) => response.json({
@@ -148,7 +161,7 @@ function createApi({ workflow, repository, publisher } = {}) {
     return response.status(500).json({ error: 'Internal server error' });
   });
 
-  return { app, workflow };
+  return { app, workflow, compliance };
 }
 
 module.exports = { createApi };

@@ -81,13 +81,54 @@ test('demo EVC scheduling and compliance evidence endpoints validate and update 
     });
     assert.equal(duplicate.status, 409);
 
-    const undertakings = await (await fetch(`${baseUrl}/api/undertakings`)).json();
-    const item = undertakings.items[0];
-    const evidence = await fetch(`${baseUrl}/api/undertakings/${item.id}`, {
-      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ evidence: 'Certificate reviewed' }),
+    const undertakingResponse = await fetch(`${baseUrl}/api/applications/${application.id}/undertakings`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-actor': 'Aaron' },
+      body: JSON.stringify({ description: 'Renewed lease', dueDate: '2030-05-08' }),
     });
+    assert.equal(undertakingResponse.status, 201);
+    const { undertaking } = await undertakingResponse.json();
+    const scopedItems = await (await fetch(`${baseUrl}/api/applications/${application.id}/undertakings`)).json();
+    assert.equal(scopedItems.items[0].id, undertaking.id);
+    const evidence = await fetch(`${baseUrl}/api/undertakings/${undertaking.id}`, {
+      method: 'PUT', headers: { 'content-type': 'application/json', 'x-actor': 'Aaron' },
+      body: JSON.stringify({ evidence: 'Signed lease reviewed', documentType: 'Lease', mimeType: 'text/plain', expiryDate: '2031-05-08' }),
+    });
+    assert.equal(evidence.status, 200);
     assert.equal((await evidence.json()).undertaking.status, 'Fulfilled');
+    const audit = await (await fetch(`${baseUrl}/api/applications/${application.id}/audit`)).json();
+    assert.ok(audit.items.some((entry) => entry.action === 'compliance.undertaking.created'));
+    assert.ok(audit.items.some((entry) => entry.action === 'compliance.evidence.validated'));
     const alerts = await (await fetch(`${baseUrl}/api/notifications`)).json();
-    assert.ok(!alerts.items.some((alert) => alert.undertakingId === item.id));
+    assert.ok(!alerts.items.some((alert) => alert.undertakingId === undertaking.id));
+  });
+});
+
+test('compliance API rejects invalid due dates, evidence types, and evidence sizes', async () => {
+  await withServer(async (baseUrl) => {
+    const created = await fetch(`${baseUrl}/api/applications`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ institutionName: 'Compliance College', region: 'West', instituteType: 'existing' }),
+    });
+    const { application } = await created.json();
+    const badDate = await fetch(`${baseUrl}/api/applications/${application.id}/undertakings`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ description: 'Renew lease', dueDate: '2030-02-30' }),
+    });
+    assert.equal(badDate.status, 400);
+    const good = await fetch(`${baseUrl}/api/applications/${application.id}/undertakings`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ description: 'Renew lease', dueDate: '2030-05-08' }),
+    });
+    const { undertaking } = await good.json();
+    const badType = await fetch(`${baseUrl}/api/undertakings/${undertaking.id}`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ evidence: 'Document uploaded', mimeType: 'application/x-msdownload' }),
+    });
+    assert.equal(badType.status, 400);
+    const badSize = await fetch(`${baseUrl}/api/undertakings/${undertaking.id}`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ evidence: 'Document uploaded', sizeBytes: 11 * 1024 * 1024 }),
+    });
+    assert.equal(badSize.status, 400);
   });
 });

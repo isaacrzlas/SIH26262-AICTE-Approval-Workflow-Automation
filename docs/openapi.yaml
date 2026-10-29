@@ -64,22 +64,59 @@ paths:
         '409': { description: Application already scheduled }
   /api/undertakings:
     get:
-      summary: List local demo undertakings
+      summary: List undertakings across applications
       responses:
         '200': { description: Undertakings }
     post:
-      summary: Add a local demo undertaking
+      summary: Add an undertaking using the legacy unscoped route
       responses:
         '201': { description: Undertaking created }
+  /api/applications/{id}/undertakings:
+    get:
+      summary: List undertakings for an application
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Application undertakings }
+        '404': { description: Application not found }
+    post:
+      summary: Create an undertaking for an application
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [description, dueDate]
+              properties:
+                description: { type: string, maxLength: 500 }
+                requiredAction: { type: string, maxLength: 500 }
+                dueDate: { type: string, format: date }
+      responses:
+        '201': { description: Undertaking created and audited }
+        '400': { description: Invalid input }
+        '404': { description: Application not found }
+  /api/applications/{id}/compliance-docs:
+    get:
+      summary: List compliance documents for an application
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Compliance document metadata }
   /api/undertakings/{id}:
     put:
       summary: Record demo evidence and fulfill an undertaking
       parameters:
         - { in: path, name: id, required: true, schema: { type: string } }
       responses:
-        '200': { description: Undertaking updated }
+        '200': { description: Evidence validated and undertaking updated }
+        '400': { description: Invalid evidence metadata }
+        '404': { description: Undertaking not found }
+        '409': { description: Undertaking already fulfilled }
   /api/notifications:
     get:
-      summary: List simulated compliance alerts
+      summary: List recorded compliance reminders and escalations
       responses:
         '200': { description: Alert collection }

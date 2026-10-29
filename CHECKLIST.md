@@ -1,6 +1,6 @@
 # SIH26262 implementation checklist
 
-Source: Executive Summary (1).pdf, pages 1–17. This tracks the full scope in the brief. Checked boxes indicate what the current prototype demonstrates; they do not imply production implementation. EVC schedules and compliance items are demo-only in-memory data; the role selector is not authentication or authorization.
+Source: Executive Summary (1).pdf, pages 1–17. This tracks the full scope in the brief. Checked boxes indicate what the current prototype demonstrates; they do not imply production implementation. EVC schedules remain demo-only in-memory data. Compliance records have in-memory and PostgreSQL adapters, but file bytes are not stored or scanned; the role selector is not authentication or authorization.
 
 ## Product goals and prototype outcomes
 - [ ] Deliver an end-to-end AICTE approval and compliance platform with workflow routing, role dashboards, EVC scheduling, compliance tracking, document validity monitoring, alerts, and escalations.
@@ -55,16 +55,15 @@ Source: Executive Summary (1).pdf, pages 1–17. This tracks the full scope in t
 - [x] Pass linting and keep UI modular/reusable (verified with `pnpm lint`).
 
 ## Part 3 — Aaron: compliance and undertakings
-- [ ] Add Undertakings fields: application ID, description, due date, status, and evidence submitted; add ComplianceDocs type and expiry date. Demo undertaking fields are present in memory; ComplianceDocs and expiry remain.
-- [x] Implement demo `GET/POST /api/undertakings` and `PUT /api/undertakings/{id}` for evidence submission.
-- [ ] Validate evidence; mark undertaking Fulfilled when valid evidence is received before due date. Demo accepts a text evidence description only; document validation and due-date policy remain.
-- [ ] Run daily deadline checks; remind 3 days before due date and avoid duplicate reminders at each threshold.
-- [ ] Mark unmet items Overdue after the deadline and send an escalated admin alert.
-- [ ] Remind about lease/other document expiry 30 and 15 days in advance.
-- [ ] Audit evidence submission and missed deadlines; display expiry reminders on the dashboard.
-- [ ] Validate upload type and size; handle dates/time zones, same-day thresholds, and leap years accurately.
-- [ ] Test reminder scheduler, evidence fulfillment/no further alerts, overdue audit/admin alert, and 30-day expiry alert.
-- [ ] Ensure scheduler does not block the server; add deadline logic unit tests and a simple load test.
+- [x] Add PostgreSQL `undertakings`, `compliance_docs`, and deduplicated `compliance_alerts` tables with application links and due/expiry indexes; keep an in-memory adapter for the local demo.
+- [x] Implement `GET/POST /api/applications/{id}/undertakings` and `PUT /api/undertakings/{id}`; retain the existing unscoped read/create routes for UI compatibility.
+- [x] Validate date, evidence description, allowed declared MIME type, declared size (10 MB maximum), and future document expiry metadata; valid evidence metadata fulfills the undertaking transactionally. Actual file bytes and document content are not uploaded, verified, or virus-scanned; late evidence is currently allowed.
+- [x] Run a daily UTC check; create a three-day undertaking reminder and deduplicate reminders. Missed deadlines become Overdue and create an admin-targeted outbox event and dashboard alert.
+- [x] Create 30/15-day document-expiry reminder records and outbox events; show recorded alerts on the dashboard.
+- [x] Audit undertaking creation, evidence validation/fulfillment, and missed deadlines in the application audit history.
+- [x] Handle strict calendar dates, UTC day boundaries, same-day due dates, and leap years in deadline logic.
+- [x] Test reminders and duplicate suppression, evidence validation, overdue audit/escalation, expiry reminders, migration SQL calls, and scheduler event-loop yielding. Unit and repository tests pass; HTTP API tests require local socket access and could not run in this restricted environment.
+- [x] Yield between scheduler batches so large queues do not monopolize the event loop; a 250-item scheduler test verifies other event-loop work runs.
 
 ## Part 4 — Joshua: database and EVC scheduling
 - [ ] Produce normalized (3NF) PostgreSQL schema and ER diagram for applications, institutions, officers, stages, EVC, undertakings, documents, audit, notifications, and roles.
@@ -129,7 +128,7 @@ Source: Executive Summary (1).pdf, pages 1–17. This tracks the full scope in t
 - [ ] Show a regional officer logging in and seeing only their region's pending applications.
 - [x] Submit applications of different types and demonstrate the brief's APH routing assumptions (team confirmation pending).
 - [x] Complete scrutiny → EVC → SAC/SHC → Approved; schedule the EVC and show transitions. (Manual demo actions; scheduling is in-memory.)
-- [ ] Add undertaking due tomorrow, run/advance scheduler, and show reminder in mock email and dashboard; show overdue escalation too. Static due-soon/overdue dashboard alerts exist; scheduler and mock email delivery are not implemented.
+- [ ] Add undertaking due in three days, run/advance scheduler, and show the reminder in the dashboard and notification service; show overdue escalation too. Scheduler, dashboard alerts, audit, and outbox events are implemented; email delivery still depends on Simardeep's notification consumer.
 - [ ] Open audit trail and show actor, timestamp, and every action including approval, reversion, and document upload.
 - [ ] Filter applications near deadlines or pending EVC and export a status report.
 - [ ] Compare manual spreadsheet/email follow-up with automated workflow effort.
