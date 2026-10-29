@@ -1,0 +1,7 @@
+{
+  "name": "aictE-approval-workflow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Starter prototype for AICTE approval workflow automation",
+  "scripts": { "dev": "node server.js" }
+}
