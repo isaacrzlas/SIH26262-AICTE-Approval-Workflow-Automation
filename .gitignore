@@ -1,0 +1,7 @@
+node_modules/
+.pnpm-store/
+.data/
+.env
+.env.*
+!.env.example
+*.log
