@@ -1,29 +1,59 @@
 # AICTE Approval Workflow Automation
 
-Starter workspace for SIH26262. This is an interactive frontend prototype based on the executive summary; it uses local mock data and does not yet connect to authentication, a database, or production services.
+Starter workspace for SIH26262. It includes a responsive dashboard and an Isaac-owned workflow API with PostgreSQL persistence and a RabbitMQ event outbox when those services are configured.
 
 ## Run locally
 
-Requires Node.js 18 or newer. No package install is required for the preview server.
+Requires Node.js 20 or newer and pnpm 11.25.0. To run with durable storage and messaging, start the local services first:
 
 ```bash
-npm run dev
+docker compose up -d
+Copy-Item .env.example .env
+pnpm install
+pnpm dev
 ```
 
-Open <http://127.0.0.1:4173>.
+On PowerShell, `Copy-Item .env.example .env` creates the local connection settings. Open <http://127.0.0.1:4173>. The server applies the SQL migration at startup and hosts the JSON API under `/api`.
 
-## What is here
+Compose exposes its PostgreSQL container on host port 5433 so it can coexist with a local PostgreSQL service already using 5432.
 
-- `index.html`, `styles.css`, `app.js`: responsive dashboard prototype with mock application records, filters, CSV export, a new-application form, and clickable workflow stage transitions.
-- `server.js`: small Node.js static preview server.
-- `CHECKLIST.md`: implementation checklist covering the complete executive summary. Checked items describe what this prototype already demonstrates; unchecked items are follow-on work.
+To preview only the UI/API without Docker, omit `.env`; the server then falls back to in-memory storage and local events. Those records are lost when the process restarts.
 
-## Suggested next steps for Isaac
+## Workflow API
 
-1. Confirm the APH decision paths and application categories with the team.
-2. Agree on shared application/stage types and the audit-event shape.
-3. Scaffold the React/Vite frontend and Node/Express API, then move the prototype views into components.
-4. Implement the application and stage models, routing rules, validation, audit trail, and unit tests.
-5. Coordinate API contracts and database requirements with the other workstreams.
+- `GET /api/health`
+- `GET /api/applications?status=Pending%20EVC&region=South&search=college`
+- `POST /api/applications` — returns `201 Created`
+- `GET /api/applications/{id}`
+- `PUT /api/applications/{id}/stage`
+- `GET /api/applications/{id}/audit`
 
-The executive summary proposes PostgreSQL, RabbitMQ, object storage, OIDC/RBAC, Docker, Terraform, GitHub Actions, and an 8-week plan. These are documented as targets; this starter does not configure those systems yet.
+Create an application:
+
+```json
+{
+  "institutionName": "Northstar College of Engineering",
+  "region": "North",
+  "instituteType": "new"
+}
+```
+
+`instituteType` is `existing` or `new`. Existing institutes follow Scrutiny → Approved; new institutes follow Scrutiny → Pending EVC → SAC / SHC → Approved. Stage actions are `approve`, `reject`, `revert`, and `clarification`. Revert, reject, and clarification actions require a non-empty `comments` field. `x-actor` supplies a demo actor label until real authentication is integrated.
+
+The PostgreSQL repository stores applications, stage history, and append-only audit records. Stage transitions, audit entries, and event-outbox entries commit in one database transaction. The outbox dispatcher publishes durable messages to the `aicte.workflow.events` RabbitMQ queue and marks them delivered after broker confirmation. Delivery is at least once; downstream consumers should deduplicate by event ID. The in-process event publisher remains available to unit tests.
+
+Local compose credentials (`aicte_local`) are for development only. Replace them before any shared or deployed environment, and do not commit `.env`.
+
+## Checks
+
+```bash
+pnpm lint
+pnpm test
+pnpm test:coverage
+```
+
+`CHECKLIST.md` tracks the full executive summary. Checked items describe what this prototype demonstrates; unchecked items are follow-on work, including team confirmation of the APH route rules.
+
+## Existing dashboard prototype
+
+`index.html`, `styles.css`, and `app.js` contain the responsive dashboard foundation with local sample records, filtering, CSV export, and a new-application form. Replacing its mock data with the API is part of the frontend workstream.

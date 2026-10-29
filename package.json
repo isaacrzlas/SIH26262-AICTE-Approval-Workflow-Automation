@@ -1,7 +1,24 @@
 {
-  "name": "aictE-approval-workflow",
+  "name": "aicte-approval-workflow",
   "version": "0.1.0",
   "private": true,
   "description": "Starter prototype for AICTE approval workflow automation",
-  "scripts": { "dev": "node server.js" }
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "dev": "node server.js",
+    "lint": "eslint server.js src/backend/*.js",
+    "test": "node --test src/backend/*.test.js",
+    "test:coverage": "node --test --experimental-test-coverage src/backend/*.test.js"
+  },
+  "dependencies": {
+    "amqplib": "2.2.0",
+    "dotenv": "18.0.9",
+    "express": "5.3.0",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.13.0",
+    "globals": "17.13.0"
+  }
 }

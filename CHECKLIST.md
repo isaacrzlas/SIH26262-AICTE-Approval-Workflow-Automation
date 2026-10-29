@@ -22,16 +22,20 @@ Source: Executive Summary (1).pdf, pages 1–17. This tracks the full scope in t
 - [ ] Create six coordinated workstreams: Isaac (workflow/backend), Jerusha (dashboard/UX), Aaron (compliance), Joshua (database/EVC), Simardeep (messaging/infrastructure), Niya (integration/testing/docs).
 
 ## Part 1 — Isaac: workflow engine and core backend
-- [ ] Build Node.js/Express REST API for application submissions, stage completion, approval, rejection, clarification, and reversion.
-- [ ] Define Application and Stage models and stage history.
-- [ ] Implement `POST /applications`, `GET /applications/{id}`, and `PUT /applications/{id}/stage` with appropriate status codes (201 on creation).
-- [ ] Encode APH routing: standard/existing institute may use scrutiny-only; new institute routes through scrutiny, EVC, and SAC/SHC as applicable.
-- [ ] Advance automatically when a stage is completed; support reviewer reverts and “return for clarification.”
-- [ ] Require a comment/reason for reversions and persist it.
-- [ ] Record an audit event for every state change and publish a message when a stage completes.
-- [ ] Validate stage values and request input.
-- [ ] Unit test default submission stage, scrutiny-only approval, scrutiny+EVC flow, reversion/reopen behavior, and audit entries.
-- [ ] Reach >80% coverage for this module; pass lint and formatting checks.
+- [x] Build Node.js/Express REST API for application submissions, stage completion, approval, rejection, clarification, and reversion.
+- [x] Define Application and stage-history models with timestamps and actor fields; provide PostgreSQL and in-memory test/dev repositories.
+- [x] Implement `POST /api/applications`, `GET /api/applications/{id}`, and `PUT /api/applications/{id}/stage`; creation returns 201. Also expose list filters and `GET /api/applications/{id}/audit`.
+- [x] Encode the brief's prototype routes: existing institute Scrutiny → Approved; new institute Scrutiny → Pending EVC → SAC / SHC → Approved.
+- [x] Advance stages automatically; support reviewer rejection, reversion, and “return for clarification.”
+- [x] Require and retain a non-empty comment for reversions. Reverts reopen the prior workflow stage.
+- [x] Record an audit entry on submission and every state transition; persist stage-completion events in a transactional outbox and publish through RabbitMQ when configured.
+- [x] Validate institution, region, institute type, action, and route/stage transitions; malformed JSON and oversized payloads receive client errors.
+- [x] Unit test default stage, scrutiny-only approval, scrutiny+EVC path, reversion/reopen behavior, clarification, rejection, audit history, and REST status codes.
+- [x] Reach >80% backend coverage (measured 97.75% overall); configure ESLint and pass lint checks.
+- [x] Add PostgreSQL schema/repository and environment-based server wiring. Application, stage-history, audit, and outbox writes are transactionally persisted; version checks reject concurrent stale updates.
+- [x] Add RabbitMQ durable queue publisher and transactional outbox dispatcher. Broker outages leave events pending for retry after restart; delivery is at least once, so consumers should deduplicate by event ID.
+- [x] Document the APH routing assumptions from the brief for team review in `docs/APH-routing.md`.
+- [ ] Run the full API against configured PostgreSQL/RabbitMQ services and get team confirmation of APH routes before production use. The implementation follows the brief's existing-institute and new-institute paths meanwhile.
 
 ## Part 2 — Jerusha: frontend dashboard and UX
 - [x] Establish a responsive dashboard visual foundation with status summary, pipeline, application list, activity, and filters.
