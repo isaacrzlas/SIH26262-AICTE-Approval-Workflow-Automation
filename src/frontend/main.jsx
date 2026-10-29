@@ -80,10 +80,19 @@ function App() {
     catch (error) { setToast(error.message); }
   }
   async function submitEvidence(item) {
-    const evidence = window.prompt('Describe the evidence submitted (demo only):');
-    if (!evidence) return;
-    try { await request(`/api/undertakings/${item.id}`, { method: 'PUT', body: JSON.stringify({ evidence }) }); setToast('Evidence recorded · item fulfilled'); await refresh(); }
-    catch (error) { setToast(error.message); }
+    setSelected(item);
+    setDialog('evidence');
+  }
+  async function saveEvidence(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const evidence = form.get('evidence');
+    setBusy(true);
+    try {
+      await request(`/api/undertakings/${selected.id}`, { method: 'PUT', body: JSON.stringify({ evidence }) });
+      setToast('Evidence recorded · item fulfilled'); setDialog(''); setSelected(null); await refresh();
+    } catch (error) { setToast(error.message); }
+    finally { setBusy(false); }
   }
   async function showAudit(item) {
     try { const result = await request(`/api/applications/${item.id}/audit`); setSelected({ ...item, audit: result.items }); setDialog('audit'); }
@@ -123,6 +132,7 @@ function App() {
       {dialog === 'application' && <form onSubmit={createApplication}><span className="eyebrow">START A WORKFLOW</span><h2>New application</h2><p>Create a local demo application. New institutes route through EVC.</p><label>Institution name<input name="institutionName" maxLength="200" required placeholder="e.g. Eastern Valley Institute" /></label><label>Region<select name="region"><option>North</option><option>South</option><option>East</option><option>West</option><option>Central</option></select></label><label>Application path<select name="instituteType"><option value="existing">Existing institute · scrutiny to approval</option><option value="new">New institute · scrutiny, EVC, committee</option></select></label><button disabled={busy} className="primary wide">{busy ? 'Creating…' : 'Create application'}</button></form>}
       {dialog === 'schedule' && selected && <form onSubmit={schedule}><span className="eyebrow">EXPERT VISIT COMMITTEE</span><h2>Schedule EVC</h2><p>{selected.institutionName}</p><label>Visit date & time<input name="scheduledAt" type="datetime-local" required min={new Date().toISOString().slice(0, 16)} /></label><label>Committee / team<input name="committee" required maxLength="120" placeholder="Regional EVC team" /></label><button className="primary wide">Save schedule</button></form>}
       {dialog === 'undertaking' && <form onSubmit={addUndertaking}><span className="eyebrow">COMPLIANCE TRACKING</span><h2>Add undertaking</h2><p>Attach a follow-up item to the latest application in this demo.</p><label>Description<input name="description" maxLength="240" required placeholder="e.g. Submit updated fire safety certificate" /></label><label>Due date<input name="dueDate" type="date" required /></label><button className="primary wide">Add compliance item</button></form>}
+      {dialog === 'evidence' && selected && <form onSubmit={saveEvidence}><span className="eyebrow">COMPLIANCE TRACKING</span><h2>Record evidence</h2><p>{selected.description}</p><label>Evidence description<input name="evidence" maxLength="500" required autoFocus placeholder="e.g. Renewed Fire Safety Certificate reviewed." /></label><button disabled={busy} className="primary wide">{busy ? 'Saving…' : 'Submit evidence'}</button></form>}
       {dialog === 'audit' && selected && <><span className="eyebrow">AUDIT TRAIL</span><h2>{selected.institutionName}</h2><p>{selected.id} · {selected.region}</p><div className="audit-list">{selected.audit?.map((entry) => <div className="audit-entry" key={entry.id}><span className="audit-dot" /><div><b>{entry.action.replaceAll('.', ' ')}</b><p>{entry.performedBy} · {new Date(entry.performedAt).toLocaleString()}</p></div></div>)}</div><button className="secondary wide" onClick={() => setDialog('')}>Close</button></>}
     </section></div>}
     {toast && <div className="toast" role="status">{toast}</div>}
