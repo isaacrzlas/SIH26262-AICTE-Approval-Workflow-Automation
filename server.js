@@ -8,6 +8,7 @@ const { createApi } = require('./src/backend/app');
 const { createPostgresRepository, runMigrations } = require('./src/backend/postgres-repository');
 const { createInMemoryRepository } = require('./src/backend/repository');
 const { RabbitMqEventPublisher, startOutboxDispatcher } = require('./src/backend/rabbitmq-publisher');
+const { startComplianceScheduler } = require('./src/backend/compliance');
 
 async function start() {
   let pool = null;
@@ -21,7 +22,7 @@ async function start() {
   }
 
   const repository = pool ? createPostgresRepository(pool) : createInMemoryRepository();
-  const { app, workflow } = createApi({ repository });
+  const { app, workflow, compliance } = createApi({ repository });
   if ((!pool || process.env.DEMO_SEED === 'true') && (await workflow.listApplications()).length === 0) {
     const samples = [
       ['Eastern Valley Institute of Technology', 'South', 'existing'],
@@ -37,6 +38,7 @@ async function start() {
     }
     console.log('Loaded five local demo applications.');
   }
+  const complianceScheduler = startComplianceScheduler(compliance);
   const frontendRoot = fs.existsSync(path.join(__dirname, 'dist')) ? path.join(__dirname, 'dist') : __dirname;
   app.use(express.static(frontendRoot));
   app.get('/{*path}', (request, response, next) => {
@@ -59,12 +61,13 @@ async function start() {
 
   async function shutdown() {
     server.close();
+    complianceScheduler.stop();
     if (dispatcher) await dispatcher.stop();
     if (pool) await pool.end();
   }
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
-  return { server, workflow, pool, dispatcher };
+  return { server, workflow, compliance, complianceScheduler, pool, dispatcher };
 }
 
 if (require.main === module) {

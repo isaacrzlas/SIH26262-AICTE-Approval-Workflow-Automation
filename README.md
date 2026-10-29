@@ -24,14 +24,16 @@ To run the durable local service stack, create `.env` from `.env.example`, then 
 - `PUT /api/applications/{id}/stage`
 - `GET /api/applications/{id}/audit`
 - `GET /api/evc/queue`, `POST /api/evc/schedule`
-- `GET /api/undertakings`, `POST /api/undertakings`, `PUT /api/undertakings/{id}`
+- `GET /api/applications/{id}/undertakings`, `POST /api/applications/{id}/undertakings`
+- `PUT /api/undertakings/{id}` (submit and validate evidence)
+- `GET /api/applications/{id}/compliance-docs`
 - `GET /api/notifications`
 
 Full starter API description is in [`docs/openapi.yaml`](docs/openapi.yaml). APH routing assumptions are in [`docs/APH-routing.md`](docs/APH-routing.md).
 
 Existing institutes follow Scrutiny → Approved; new institutes follow Scrutiny → Pending EVC → SAC / SHC → Approved, as interpreted from the brief pending team confirmation. Stage actions are `approve`, `reject`, `revert`, and `clarification`; revert, reject, and clarification require comments.
 
-The PostgreSQL workflow repository transactionally stores applications, stage history, audit entries, and outbox events. RabbitMQ publishes workflow events at least once. EVC scheduling and undertaking/evidence data are currently in-memory prototype services; they are not yet persisted to PostgreSQL. No identity provider, production RBAC, private document storage, TLS termination, email/SMS delivery, or production cloud deployment is configured. Demo role selection is not a security boundary. Request throttling is process-local and must be replaced for multi-instance production use.
+The PostgreSQL repository stores workflow data, undertakings, compliance document metadata, compliance alerts, audit entries, and outbox events. A daily compliance check records 3-day undertaking reminders, marks missed undertakings overdue, and records document-expiry reminders at 30 and 15 days. Alert records are deduplicated. Evidence validation currently checks submitted metadata (type, declared size, and expiry) and a text description; file bytes are not uploaded or scanned because private document storage is not configured. RabbitMQ can publish outbox events when configured, but no email/SMS delivery, identity provider, production RBAC, TLS termination, or production cloud deployment is configured. Demo role selection is not a security boundary. Request throttling is process-local and must be replaced for multi-instance production use.
 
 ## Development checks
 

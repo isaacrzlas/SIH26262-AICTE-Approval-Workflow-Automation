@@ -8,7 +8,7 @@
     "dev": "concurrently -k \"node server.js\" \"vite --host 127.0.0.1\"",
     "start": "node server.js",
     "build": "vite build",
-    "lint": "eslint server.js src/backend/*.js src/frontend/**/*.{js,jsx}",
+    "lint": "eslint server.js src/backend/*.js src/frontend/**/*.jsx",
     "test": "node --test src/backend/*.test.js",
     "test:coverage": "node --test --experimental-test-coverage src/backend/*.test.js"
   },
