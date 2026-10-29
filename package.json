@@ -5,8 +5,10 @@
   "description": "Starter prototype for AICTE approval workflow automation",
   "packageManager": "pnpm@11.25.0",
   "scripts": {
-    "dev": "node server.js",
-    "lint": "eslint server.js src/backend/*.js",
+    "dev": "concurrently -k \"node server.js\" \"vite --host 127.0.0.1\"",
+    "start": "node server.js",
+    "build": "vite build",
+    "lint": "eslint server.js src/backend/*.js src/frontend/**/*.{js,jsx}",
     "test": "node --test src/backend/*.test.js",
     "test:coverage": "node --test --experimental-test-coverage src/backend/*.test.js"
   },
@@ -14,11 +16,17 @@
     "amqplib": "2.2.0",
     "dotenv": "18.0.9",
     "express": "5.3.0",
-    "pg": "8.23.1"
+    "pg": "8.23.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-router-dom": "7.18.5"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "eslint": "10.13.0",
-    "globals": "17.13.0"
+    "globals": "17.13.0",
+    "@vitejs/plugin-react": "latest",
+    "concurrently": "latest",
+    "vite": "latest"
   }
 }

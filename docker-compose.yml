@@ -31,6 +31,26 @@ services:
       timeout: 5s
       retries: 15
 
+  app:
+    build: .
+    environment:
+      PORT: 4173
+      DATABASE_URL: postgres://aicte:aicte_local@postgres:5432/aicte_workflow
+      AMQP_URL: amqp://aicte:aicte_local@rabbitmq:5672
+      DEMO_SEED: "true"
+    ports:
+      - "4173:4173"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4173/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
 volumes:
   postgres-data:
   rabbitmq-data:

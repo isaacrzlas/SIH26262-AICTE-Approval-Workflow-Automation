@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aicte-workflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aicte-workflow
+  template:
+    metadata:
+      labels:
+        app: aicte-workflow
+    spec:
+      containers:
+        - name: app
+          image: aicte-workflow:replace-before-deploy
+          ports:
+            - name: http
+              containerPort: 4173
+          envFrom:
+            - secretRef:
+                name: aicte-workflow-runtime
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20

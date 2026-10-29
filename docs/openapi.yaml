@@ -1,0 +1,85 @@
+openapi: 3.0.3
+info:
+  title: AICTE Approval Workflow Prototype API
+  version: 0.2.0
+  description: Local prototype API. Authentication and production authorization are not implemented.
+servers:
+  - url: http://127.0.0.1:4173
+paths:
+  /api/health:
+    get:
+      summary: Check API and configured service mode
+      responses:
+        '200': { description: Health status }
+  /api/applications:
+    get:
+      summary: List applications
+      parameters:
+        - { in: query, name: status, schema: { type: string } }
+        - { in: query, name: region, schema: { type: string } }
+        - { in: query, name: search, schema: { type: string } }
+      responses:
+        '200': { description: Application collection }
+    post:
+      summary: Submit an application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [institutionName, region, instituteType]
+              properties:
+                institutionName: { type: string, maxLength: 200 }
+                region: { type: string, maxLength: 80 }
+                instituteType: { type: string, enum: [new, existing] }
+      responses:
+        '201': { description: Application created }
+        '400': { description: Invalid input }
+  /api/applications/{id}/stage:
+    put:
+      summary: Advance, reject, revert, or request clarification
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Transition result including previous and new stages }
+        '409': { description: Invalid workflow transition }
+  /api/applications/{id}/audit:
+    get:
+      summary: Read application audit history
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Audit entries }
+  /api/evc/queue:
+    get:
+      summary: List applications awaiting an EVC visit
+      responses:
+        '200': { description: EVC queue }
+  /api/evc/schedule:
+    post:
+      summary: Schedule a local demo EVC session
+      responses:
+        '201': { description: Schedule created }
+        '409': { description: Application already scheduled }
+  /api/undertakings:
+    get:
+      summary: List local demo undertakings
+      responses:
+        '200': { description: Undertakings }
+    post:
+      summary: Add a local demo undertaking
+      responses:
+        '201': { description: Undertaking created }
+  /api/undertakings/{id}:
+    put:
+      summary: Record demo evidence and fulfill an undertaking
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Undertaking updated }
+  /api/notifications:
+    get:
+      summary: List simulated compliance alerts
+      responses:
+        '200': { description: Alert collection }
